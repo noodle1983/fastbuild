@@ -183,6 +183,17 @@
             data->safeToFree = true;
         }
 
+        uint32_t preferIp = ip + 1;
+        {
+            AStackString<> preferIpStr;
+            if ( Env::GetEnvVariable( "FASTBUILD_PREFER_LOCAL_IP", preferIpStr ) )
+            {
+                struct in_addr s;
+                inet_pton(AF_INET, preferIpStr.Get(), (void *)&s);
+                preferIp = s.s_addr;
+            }
+        }
+
         // perform lookup
         {
             PROFILE_SECTION( "::getaddrinfo" );
@@ -196,12 +207,19 @@
             struct addrinfo * result( nullptr );
             if ( ::getaddrinfo( hostName.Get(), nullptr, &hints, &result ) == 0 )
             {
-                if ( result )
+                for(; result != nullptr; result = result->ai_next )
                 {
                     PRAGMA_DISABLE_PUSH_CLANG_WINDOWS( "-Wcast-align" ) // cast from 'struct sockaddr *' to 'sockaddr_in *' increases required alignment from 2 to 4
                     const sockaddr_in * sockaddr_ipv4 = (sockaddr_in *)result->ai_addr;
                     PRAGMA_DISABLE_POP_CLANG_WINDOWS // -Wcast-align
-                    ip = sockaddr_ipv4->sin_addr.s_addr;
+                    if (ip != preferIp )
+                    {
+                        ip = sockaddr_ipv4->sin_addr.s_addr;
+                        if (ip == preferIp )
+                        {
+                            break;
+                        }
+                    }
                 }
             }
             ::freeaddrinfo( result );
